@@ -1,0 +1,4 @@
+{
+  "intent": "AAO",
+  "application": {"customer_id": "synthetic-002", "account_type": "CURRENT", "kyc_current": true, "needs_review": true}
+}

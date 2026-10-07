@@ -205,6 +205,11 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# AAO demo local state and source-verification downloads
+.local/
+.verification/
+.conductor-oss/
+
 # Ruff stuff:
 .ruff_cache/
 

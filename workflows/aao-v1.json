@@ -1,0 +1,162 @@
+{
+  "name": "aao",
+  "description": "AAO v1: local synthetic banking journey",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "platform@example.invalid",
+  "restartable": false,
+  "timeoutSeconds": 604800,
+  "timeoutPolicy": "TIME_OUT_WF",
+  "inputParameters": ["case_id", "document_refs"],
+  "outputParameters": {
+    "case_id": "${complete_case.output.case_id}",
+    "outcome": "${complete_case.output.outcome}",
+    "account_id": "${complete_case.output.account_id}",
+    "validation_errors": "${validate.output.errors}"
+  },
+  "tasks": [
+    {
+      "name": "aao_classify_intent",
+      "taskReferenceName": "classify_intent",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "case_id": "${workflow.input.case_id}",
+        "document_refs": "${workflow.input.document_refs}"
+      }
+    },
+    {
+      "name": "aao_extract_application",
+      "taskReferenceName": "extract_application",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "case_id": "${workflow.input.case_id}",
+        "document_refs": "${workflow.input.document_refs}",
+        "intent": "${classify_intent.output.intent}"
+      }
+    },
+    {
+      "name": "aao_validate",
+      "taskReferenceName": "validate",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "case_id": "${workflow.input.case_id}",
+        "operation": "validate_aao",
+        "intent": "${classify_intent.output.intent}",
+        "application": "${extract_application.output.application}"
+      }
+    },
+    {
+      "name": "initialize_outcome",
+      "taskReferenceName": "initialize_outcome",
+      "type": "SET_VARIABLE",
+      "inputParameters": {"decision": "REJECTED", "account_id": null}
+    },
+    {
+      "name": "validation_route",
+      "taskReferenceName": "validation_route",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "route",
+      "inputParameters": {"route": "${validate.output.route}"},
+      "decisionCases": {
+        "AUTO": [
+          {
+            "name": "automatic_approval",
+            "taskReferenceName": "automatic_approval",
+            "type": "SET_VARIABLE",
+            "inputParameters": {"decision": "APPROVED"}
+          }
+        ],
+        "REVIEW": [
+          {
+            "name": "human_review",
+            "taskReferenceName": "human_review",
+            "type": "WAIT",
+            "inputParameters": {
+              "case_id": "${workflow.input.case_id}",
+              "document_refs": "${workflow.input.document_refs}",
+              "validation": "${validate.output}"
+            }
+          },
+          {
+            "name": "review_decision",
+            "taskReferenceName": "review_decision",
+            "type": "SWITCH",
+            "evaluatorType": "value-param",
+            "expression": "decision",
+            "inputParameters": {"decision": "${human_review.output.decision}"},
+            "decisionCases": {
+              "APPROVED": [
+                {
+                  "name": "human_approval",
+                  "taskReferenceName": "human_approval",
+                  "type": "SET_VARIABLE",
+                  "inputParameters": {"decision": "APPROVED"}
+                }
+              ]
+            },
+            "defaultCase": []
+          }
+        ]
+      },
+      "defaultCase": []
+    },
+    {
+      "name": "fulfillment_route",
+      "taskReferenceName": "fulfillment_route",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "decision",
+      "inputParameters": {"decision": "${workflow.variables.decision}"},
+      "decisionCases": {
+        "APPROVED": [
+          {
+            "name": "aao_fulfill",
+            "taskReferenceName": "fulfill",
+            "type": "SIMPLE",
+            "inputParameters": {
+              "case_id": "${workflow.input.case_id}",
+              "decision": "${workflow.variables.decision}",
+              "application": "${extract_application.output.application}",
+              "idempotency_key": "aao:${workflow.input.case_id}:fulfill"
+            }
+          },
+          {
+            "name": "record_account",
+            "taskReferenceName": "record_account",
+            "type": "SET_VARIABLE",
+            "inputParameters": {"account_id": "${fulfill.output.account_id}"}
+          }
+        ]
+      },
+      "defaultCase": []
+    },
+    {
+      "name": "aao_update_crm",
+      "taskReferenceName": "update_crm",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "idempotency_key": "aao:${workflow.input.case_id}:crm",
+        "payload": {
+          "case_id": "${workflow.input.case_id}",
+          "decision": "${workflow.variables.decision}",
+          "account_id": "${workflow.variables.account_id}"
+        }
+      }
+    },
+    {
+      "name": "aao_complete_case",
+      "taskReferenceName": "complete_case",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "idempotency_key": "aao:${workflow.input.case_id}:complete",
+        "payload": {
+          "case_id": "${workflow.input.case_id}",
+          "decision": "${workflow.variables.decision}",
+          "account_id": "${workflow.variables.account_id}",
+          "crm_updated": "${update_crm.output.updated}"
+        }
+      }
+    }
+  ]
+}

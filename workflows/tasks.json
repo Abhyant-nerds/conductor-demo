@@ -1,0 +1,8 @@
+[
+  {"name": "aao_classify_intent", "ownerEmail": "platform@example.invalid", "retryCount": 2, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"},
+  {"name": "aao_extract_application", "ownerEmail": "platform@example.invalid", "retryCount": 2, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"},
+  {"name": "aao_validate", "ownerEmail": "platform@example.invalid", "retryCount": 2, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"},
+  {"name": "aao_fulfill", "ownerEmail": "platform@example.invalid", "retryCount": 3, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"},
+  {"name": "aao_update_crm", "ownerEmail": "platform@example.invalid", "retryCount": 3, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"},
+  {"name": "aao_complete_case", "ownerEmail": "platform@example.invalid", "retryCount": 3, "retryLogic": "FIXED", "retryDelaySeconds": 2, "timeoutSeconds": 60, "responseTimeoutSeconds": 30, "timeoutPolicy": "RETRY"}
+]

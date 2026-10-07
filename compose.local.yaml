@@ -1,0 +1,9 @@
+# Overlay on the v3.32.5 upstream docker/docker-compose.yaml.
+# Redis contains workflow state and queues in that configuration.
+services:
+  conductor-redis:
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - aao-redis:/data
+volumes:
+  aao-redis:

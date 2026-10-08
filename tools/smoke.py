@@ -12,6 +12,7 @@ from conductor_demo.services import (
     LocalGateway, LocalValidation,
 )
 from conductor_demo.workers import Workers
+from conductor.client.http.rest import ApiException
 
 
 def main():
@@ -40,10 +41,16 @@ def main():
             case = "smoke-" + uuid.uuid4().hex
             workflow_id = client.start(case, [f"fixture:{fixture}.json"])
             workers = new_workers()
-            deadline = time.monotonic() + 90
+            deadline = time.monotonic() + 180
             reviewed = False
             while time.monotonic() < deadline:
-                client.run_once(workers, "aao-smoke")
+                try:
+                    client.run_once(workers, "aao-smoke")
+                except ApiException as error:
+                    # Match the normal worker loop: let Conductor redeliver after
+                    # an ambiguous acknowledgement, preserving operation keys.
+                    if error.status != 0 and error.status < 500:
+                        raise
                 workflow = client.status(workflow_id)
                 if workflow["status"] == "COMPLETED":
                     assert workflow["output"]["outcome"] == outcome, workflow
@@ -53,7 +60,7 @@ def main():
                         count = db.execute("SELECT count(*) FROM effects WHERE key = ?",
                                            (f"aao:{case}:fulfill",)).fetchone()[0]
                     assert count == (1 if outcome == "APPROVED" else 0), workflow
-                    print(f"PASS {fixture}/{review or 'no-review'}: {workflow_id}")
+                    print(f"PASS {fixture}/{review or 'no-review'}: {workflow_id}", flush=True)
                     break
                 if workflow["status"] != "RUNNING":
                     raise RuntimeError(f"Unexpected terminal state: {workflow}")

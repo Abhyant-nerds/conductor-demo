@@ -13,6 +13,7 @@ from conductor.client.http.api.task_resource_api import TaskResourceApi
 from conductor.client.http.api.workflow_resource_api import WorkflowResourceApi
 from conductor.client.http.models.start_workflow_request import StartWorkflowRequest
 from conductor.client.http.models.task_result import TaskResult
+from conductor.client.http.rest import ApiException
 
 from conductor_demo.workers import TASK_NAMES, Workers
 
@@ -51,11 +52,23 @@ class Conductor:
         task, duplicate = review_target(workflow, decision, reviewer)
         if duplicate:
             return {"decision": decision, "duplicate": True}
-        self.tasks.update_task(TaskResult(
-            workflow_instance_id=workflow_id, task_id=task["taskId"],
-            status="COMPLETED", worker_id="aao-review-cli",
-            output_data={"decision": decision, "reviewer": reviewer},
-        ), _request_timeout=10)
+        try:
+            self.tasks.update_task(TaskResult(
+                workflow_instance_id=workflow_id, task_id=task["taskId"],
+                status="COMPLETED", worker_id="aao-review-cli",
+                output_data={"decision": decision, "reviewer": reviewer},
+            ), _request_timeout=10)
+        except ApiException as error:
+            # The server may commit the decision before its response times out.
+            # Read back the exact task instead of blindly sending it again.
+            if error.status == 0 or error.status >= 500:
+                try:
+                    _, completed = review_target(self.status(workflow_id), decision, reviewer)
+                except Exception:
+                    raise error
+                if completed:
+                    return {"decision": decision, "duplicate": True, "reconciled": True}
+            raise
         return {"decision": decision, "duplicate": False}
 
     def run_once(self, workers: Workers, worker_id: str) -> int:

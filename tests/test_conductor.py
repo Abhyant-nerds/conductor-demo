@@ -56,6 +56,7 @@ class SdkContractTests(unittest.TestCase):
         self.workflow = pending_review()
         self.polled = False
         self.fail_ack = False
+        self.timeout_review = False
 
         def handle(request):
             body = json.loads(request.content) if request.content else None
@@ -73,6 +74,9 @@ class SdkContractTests(unittest.TestCase):
                         "inputData": {"document_refs": ["fixture:automatic.json"]}})
                 return httpx.Response(204)
             if request.url.path == "/api/tasks":
+                if self.timeout_review:
+                    self.workflow["tasks"][0].update(status="COMPLETED", outputData=body["outputData"])
+                    raise httpx.ReadTimeout("synthetic lost response", request=request)
                 if self.fail_ack:
                     return httpx.Response(503, text="unavailable")
                 return httpx.Response(200, text=body["taskId"])
@@ -118,6 +122,12 @@ class SdkContractTests(unittest.TestCase):
         self.workflow["tasks"][0].update(status="COMPLETED", outputData={"decision": "APPROVED"})
         self.assertTrue(self.client.review("wf-1", "APPROVED", "reviewer")["duplicate"])
         self.assertEqual(len(self.requests), 1)
+
+    def test_review_reconciles_committed_decision_after_response_timeout(self):
+        self.timeout_review = True
+        result = self.client.review("wf-1", "APPROVED", "reviewer")
+        self.assertTrue(result["reconciled"])
+        self.assertEqual(len([p for m, p, _ in self.requests if m == "POST"]), 1)
 
     def test_worker_polls_executes_and_acknowledges(self):
         workers = Mock()

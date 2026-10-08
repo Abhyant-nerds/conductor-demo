@@ -91,6 +91,27 @@ Redis's one-second AOF flush is a development durability choice, not a banking
 recovery guarantee. This development stack has no authentication; operate it on
 an isolated development machine.
 
+The first startup can take over a minute (about 80 seconds observed locally).
+During startup, `/health` can close the connection before the HTTP listener is
+ready. Check readiness with:
+
+```powershell
+docker compose -p aao-demo -f .conductor-oss/docker/docker-compose.yaml -f compose.local.yaml ps
+```
+
+If Conductor fails to start with an Elasticsearch `Connection refused` error,
+wait for Redis and Elasticsearch to show `healthy`, then restart only the server:
+
+```powershell
+docker compose -p aao-demo -f .conductor-oss/docker/docker-compose.yaml -f compose.local.yaml restart conductor-server
+```
+
+Wait for the server to show `healthy` before retrying `/health`. Dependency
+ordering at `compose up` does not guarantee that dependencies are ready after a
+Docker engine restart. Detailed Java startup logs are also available with
+`docker exec conductor-server tail -n 100 /app/logs/server.log`; upstream Docker
+log rotation retains only very small logs.
+
 To use an existing self-hosted OSS server instead, set its `/api` URL:
 
 ```powershell
@@ -137,6 +158,30 @@ Stop the server with:
 docker compose -p aao-demo -f .conductor-oss/docker/docker-compose.yaml -f compose.local.yaml down
 ```
 
+### If the server build ends with `error reading from server: EOF`
+
+This indicates that the build client lost its connection to the builder; it
+does not by itself identify a Java compilation error. Check `docker info` and
+Docker Desktop's diagnostics. The upstream source build allows a 2 GiB Gradle
+heap and a 4 GiB UI heap, so a roughly 4 GiB Docker VM can encounter memory
+pressure. Keep build cache and the downloaded images for the retry.
+
+For this CLI-based demo, the pinned Dockerfile supports skipping the UI build:
+
+```powershell
+docker compose --progress plain -p aao-demo -f .conductor-oss/docker/docker-compose.yaml -f compose.local.yaml build --build-arg SKIP_UI=true conductor-server
+docker compose -p aao-demo -f .conductor-oss/docker/docker-compose.yaml -f compose.local.yaml up -d --no-build
+Invoke-WebRequest http://localhost:8000/health
+```
+
+This retains the API, workflows, and Python workers; the web UI is unavailable
+in this image. The Java server still builds from the pinned OSS source tag.
+For the full UI build, increase the Docker/WSL VM memory allocation if host
+capacity permits (8 GiB is a practical starting point), then retry the original
+build. If another EOF occurs, capture the last build steps from `--progress
+plain` and Docker Desktop diagnostics to distinguish resource exhaustion from
+an engine crash or transport problem.
+
 ## Durable review and retries
 
 The untimed `WAIT` task remains `IN_PROGRESS` until an external task update.
@@ -153,6 +198,9 @@ CLI use. They are not a compare-and-set operation: simultaneous reviewers can
 race. A real review API must authenticate and authorize reviewers, serialize
 decisions per review task, persist its audit/decision record, and reconcile
 ambiguous task-update responses. The CLI is a local signal adapter, not that API.
+If a task-update response times out or reports a server error, the CLI checks the
+review task again and recognizes an already committed matching decision. It
+does not blindly resend the decision.
 
 SIMPLE tasks have 60-second execution and 30-second response timeouts, fixed
 two-second retry delays, and two retries for classification/extraction/validation
@@ -183,6 +231,28 @@ adapter is only for local mock effects, not distributed production workers.
 
 ## Checks
 
+### Guided notebook (recommended for understanding the scenarios)
+
+Open `notebooks/AAO_walkthrough.ipynb` in VS Code. Install the optional kernel
+once if needed:
+
+```powershell
+uv pip install --python .venv/Scripts/python.exe -r requirements-notebook.txt
+```
+
+Choose the project's `.venv` using **Select Kernel → Python Environments**.
+Keep Conductor running and stop any separate `aao workers` terminal. Run the
+notebook cells from top to bottom with **Shift+Enter**, or use **Run All**.
+The notebook runs local workers itself and shows readable result tables for
+each case, the durable review pause, both human decisions, invalid KYC, a
+four-scenario summary, and duplicate/conflicting review behavior. No workflow
+IDs need to be copied. Setup creates a new session; rerunning scenario cells
+reuses their workflow. Results use the persistent CLI mock ledger.
+All 11 notebook code cells were executed successfully against the local server,
+including the four scenarios, duplicate/conflicting decisions, and focused tests.
+
+### Command-line checks
+
 ```powershell
 .\.venv\Scripts\python -m unittest discover -s tests -v
 .\.venv\Scripts\python -m compileall -q src tests tools
@@ -199,14 +269,16 @@ a test helper, **not** a Conductor emulator or durability test. The live smoke
 script exercises automatic approval, durable review with worker reconstruction,
 approval, rejection, and invalid applications against a local server.
 
-Verification in this workspace: **26 tests passed**; source compilation,
+Verification in this workspace: **27 tests passed**; source compilation,
 `git diff --check`, editable package installation, and the `aao --help` entry
 point passed. All 22 locked runtime versions match installed distributions.
-Docker is not installed,
-so the server build and live smoke test have **not** been run. The SDK calls were
-verified against installed official SDK 1.5.1 and tested with mocked HTTP;
-server task/API behavior was checked against tagged v3.32.5 source. This is an
-API compatibility check, not a claim of live end-to-end certification.
+The local source-built server is now running and `/health` returned HTTP 200
+with `healthy: true`. All four live smoke scenarios passed: automatic approval,
+human approval, human rejection, and invalid-application rejection. The review
+scenarios reconstructed workers/client while the durable WAIT was pending.
+The CLI reconciles committed review decisions after ambiguous responses. SDK
+serialization/routes were also tested with mocked HTTP, and server task/API
+behavior was checked against tagged v3.32.5 source.
 
 ## Verified official references
 

@@ -1,0 +1,1061 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Conductor Skills Installer (PowerShell)
+# Installs Conductor workflow orchestration skills for your AI coding agent.
+# https://github.com/conductor-oss/conductor-skills
+# ─────────────────────────────────────────────────────────────────────────────
+
+param(
+    [string]$Agent,
+    [string]$ProjectDir = ".",
+    [switch]$Global,
+    [switch]$All,
+    [switch]$Upgrade,
+    [switch]$Check,
+    [switch]$Force,
+    [switch]$Uninstall,
+    [switch]$Version
+)
+
+$ErrorActionPreference = "Stop"
+
+$SCRIPT_VERSION = "1.8.0"
+# Per-file fetches and the upgrade-check both read from `main`. Releases are
+# rolled by bumping VERSION on main, not by tagging.
+$REPO_BASE = "https://raw.githubusercontent.com/conductor-oss/conductor-skills/main"
+
+# When set, skip the network fetch and copy from this directory instead.
+# The npm package sets this so the bundled files are used.
+$LOCAL_DIR = $env:CONDUCTOR_SKILLS_LOCAL_DIR
+
+$SKILL_FILES = @(
+    "skills/conductor/SKILL.md",
+    "skills/conductor/references/agent-sdks.md",
+    "skills/conductor/references/agents.md",
+    "skills/conductor/references/api-reference.md",
+    "skills/conductor/references/cli-index.md",
+    "skills/conductor/references/fallback-cli.md",
+    "skills/conductor/references/graaljs-gotchas.md",
+    "skills/conductor/references/optimization.md",
+    "skills/conductor/references/orkes.md",
+    "skills/conductor/references/orkes-integrations.md",
+    "skills/conductor/references/schedules.md",
+    "skills/conductor/references/setup.md",
+    "skills/conductor/references/template-resolution.md",
+    "skills/conductor/references/troubleshooting.md",
+    "skills/conductor/references/visualization.md",
+    "skills/conductor/references/workers.md",
+    "skills/conductor/references/workflow-definition.md",
+    "skills/conductor/examples/agent-a2a-remote.md",
+    "skills/conductor/examples/agent-deploy-and-invoke.md",
+    "skills/conductor/examples/agent-society/.env.example",
+    "skills/conductor/examples/agent-society/README.md",
+    "skills/conductor/examples/agent-society/brief.example.txt",
+    "skills/conductor/examples/agent-society/deploy.py",
+    "skills/conductor/examples/agent-society/requirements.txt",
+    "skills/conductor/examples/agent-society/run.py",
+    "skills/conductor/examples/agent-society/serve.py",
+    "skills/conductor/examples/agent-society/software_society/__init__.py",
+    "skills/conductor/examples/agent-society/software_society/agents.py",
+    "skills/conductor/examples/agent-society/software_society/tools.py",
+    "skills/conductor/examples/agent-society/tests/test_society.py",
+    "skills/conductor/examples/agent-society/workflows/software-society.json",
+    "skills/conductor/examples/bengaluru-writers-room/.env.example",
+    "skills/conductor/examples/bengaluru-writers-room/README.md",
+    "skills/conductor/examples/bengaluru-writers-room/deploy.py",
+    "skills/conductor/examples/bengaluru-writers-room/mission.example.txt",
+    "skills/conductor/examples/bengaluru-writers-room/requirements.txt",
+    "skills/conductor/examples/bengaluru-writers-room/run.py",
+    "skills/conductor/examples/bengaluru-writers-room/serve.py",
+    "skills/conductor/examples/bengaluru-writers-room/tests/test_writers_room.py",
+    "skills/conductor/examples/bengaluru-writers-room/workflows/bengaluru-writers-room.json",
+    "skills/conductor/examples/bengaluru-writers-room/writers_room/__init__.py",
+    "skills/conductor/examples/bengaluru-writers-room/writers_room/agents.py",
+    "skills/conductor/examples/bengaluru-writers-room/writers_room/tools.py",
+    "skills/conductor/examples/ai-agent-loop.md",
+    "skills/conductor/examples/ai-agent-mcp.md",
+    "skills/conductor/examples/create-and-run-workflow.md",
+    "skills/conductor/examples/do-while-loop.md",
+    "skills/conductor/examples/fork-join.md",
+    "skills/conductor/examples/llm-chaining.md",
+    "skills/conductor/examples/llm-chat.md",
+    "skills/conductor/examples/llm-rag.md",
+    "skills/conductor/examples/monitor-and-retry.md",
+    "skills/conductor/examples/review-workflow.md",
+    "skills/conductor/examples/signal-wait-task.md",
+    "skills/conductor/examples/sub-workflow.md",
+    "skills/conductor/examples/workflows/a2a-remote-agent.json",
+    "skills/conductor/examples/workflows/a2a-expose-agent.json",
+    "skills/conductor/examples/workflows/agent-cancel.json",
+    "skills/conductor/examples/workflows/agent-fork-specialists.json",
+    "skills/conductor/examples/workflows/agent-hitl-resume.json",
+    "skills/conductor/examples/workflows/agent-approval-in-workflow.json",
+    "skills/conductor/examples/workflows/agent-invoke.json",
+    "skills/conductor/examples/workflows/ai-agent-loop.json",
+    "skills/conductor/examples/workflows/ai-agent-mcp.json",
+    "skills/conductor/examples/workflows/child-normalize.json",
+    "skills/conductor/examples/workflows/do-while-loop.json",
+    "skills/conductor/examples/workflows/fork-join.json",
+    "skills/conductor/examples/workflows/llm-chaining.json",
+    "skills/conductor/examples/workflows/llm-chat.json",
+    "skills/conductor/examples/workflows/llm-rag.json",
+    "skills/conductor/examples/workflows/parent-pipeline.json",
+    "skills/conductor/examples/workflows/weather-notification.json",
+    "skills/conductor/examples/agents/agent-config.json",
+    "skills/conductor/examples/agents/csharp/WeatherAgent.cs",
+    "skills/conductor/examples/agents/java/WeatherAgent.java",
+    "skills/conductor/examples/agents/python/adk_bridge.py",
+    "skills/conductor/examples/agents/python/claude_agent_sdk_bridge.py",
+    "skills/conductor/examples/agents/python/langchain_bridge.py",
+    "skills/conductor/examples/agents/python/langgraph_bridge.py",
+    "skills/conductor/examples/agents/python/openai_agents_bridge.py",
+    "skills/conductor/examples/agents/python/test_weather_agent.py",
+    "skills/conductor/examples/agents/python/weather_agent.py",
+    "skills/conductor/examples/agents/typescript/langgraph-bridge.ts",
+    "skills/conductor/examples/agents/typescript/openai-agents-bridge.ts",
+    "skills/conductor/examples/agents/typescript/vercel-ai-tools.ts",
+    "skills/conductor/examples/agents/typescript/weather-agent.ts",
+    "skills/conductor/scripts/conductor_api.py"
+    "skills/conductor/scripts/test_conductor_api.py"
+)
+
+$VALID_AGENTS = @("claude","codex","gemini","cursor","windsurf","cline","aider","copilot","amazonq","opencode","roo","amp")
+$GLOBAL_AGENTS = @("claude","codex","gemini","cursor","windsurf","cline","roo","amp","aider","opencode","copilot")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Write-Info  { param([string]$Msg) Write-Host "[info] $Msg" -ForegroundColor Blue }
+function Write-Ok    { param([string]$Msg) Write-Host "[ok] $Msg" -ForegroundColor Green }
+function Write-Warn  { param([string]$Msg) Write-Host "[warn] $Msg" -ForegroundColor Yellow }
+function Write-Err   { param([string]$Msg) Write-Host "[error] $Msg" -ForegroundColor Red }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Detect-Agents {
+    $detected = @()
+    $installDir = $env:USERPROFILE
+
+    if ((Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $installDir ".claude"))) { $detected += "claude" }
+    if ((Get-Command codex -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $installDir ".codex"))) { $detected += "codex" }
+    if ((Get-Command gemini -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $installDir ".gemini"))) { $detected += "gemini" }
+    if (Test-Path (Join-Path $installDir ".cursor")) { $detected += "cursor" }
+    if (Test-Path (Join-Path $installDir ".codeium")) { $detected += "windsurf" }
+    if (Test-Path (Join-Path $installDir ".cline")) { $detected += "cline" }
+    if (Get-Command aider -ErrorAction SilentlyContinue) { $detected += "aider" }
+    if (Test-Path (Join-Path $installDir ".config\github-copilot")) { $detected += "copilot" }
+    if ((Get-Command q -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $installDir ".amazonq"))) { $detected += "amazonq" }
+    if (Get-Command opencode -ErrorAction SilentlyContinue) { $detected += "opencode" }
+    if (Test-Path (Join-Path $installDir ".roo")) { $detected += "roo" }
+    if ((Get-Command amp -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $installDir ".config\amp"))) { $detected += "amp" }
+
+    return $detected
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manifest tracking
+# ─────────────────────────────────────────────────────────────────────────────
+
+$GLOBAL_MANIFEST = Join-Path $env:USERPROFILE ".conductor-skills\manifest.json"
+
+function Get-ManifestPath {
+    param([bool]$IsGlobal, [string]$ProjDir = ".")
+    if ($IsGlobal) { return $GLOBAL_MANIFEST }
+    return Join-Path $ProjDir ".conductor-skills\manifest.json"
+}
+
+function Ensure-Manifest {
+    param([string]$ManifestPath)
+    $dir = Split-Path -Parent $ManifestPath
+    if ($dir -and !(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (!(Test-Path $ManifestPath)) {
+        '{"schema_version":1,"installations":{}}' | Set-Content -Path $ManifestPath
+    }
+}
+
+function Read-ManifestVersion {
+    param([string]$ManifestPath, [string]$AgentName)
+    if (!(Test-Path $ManifestPath)) { return "" }
+    try {
+        $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+        $entry = $m.installations.PSObject.Properties | Where-Object { $_.Name -eq $AgentName }
+        if ($entry) { return $entry.Value.version }
+    } catch {}
+    return ""
+}
+
+function Read-ManifestTargetPath {
+    param([string]$ManifestPath, [string]$AgentName)
+    if (!(Test-Path $ManifestPath)) { return "" }
+    try {
+        $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+        $entry = $m.installations.PSObject.Properties | Where-Object { $_.Name -eq $AgentName }
+        if ($entry) { return $entry.Value.target_path }
+    } catch {}
+    return ""
+}
+
+function Write-ManifestEntry {
+    param([string]$ManifestPath, [string]$AgentName, [string]$Ver, [string]$Mode, [string]$TargetPath)
+    Ensure-Manifest -ManifestPath $ManifestPath
+    $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+    $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+    $existingEntry = $m.installations.PSObject.Properties | Where-Object { $_.Name -eq $AgentName }
+    $installedAt = $now
+    if ($existingEntry) { $installedAt = $existingEntry.Value.installed_at }
+
+    $entry = [PSCustomObject]@{
+        version = $Ver
+        installed_at = $installedAt
+        updated_at = $now
+        mode = $Mode
+        target_path = $TargetPath
+    }
+
+    if ($existingEntry) {
+        $m.installations.PSObject.Properties.Remove($AgentName)
+    }
+    $m.installations | Add-Member -NotePropertyName $AgentName -NotePropertyValue $entry
+    $m | ConvertTo-Json -Depth 10 | Set-Content -Path $ManifestPath
+}
+
+function Remove-ManifestEntry {
+    param([string]$ManifestPath, [string]$AgentName)
+    if (!(Test-Path $ManifestPath)) { return }
+    try {
+        $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+        $m.installations.PSObject.Properties.Remove($AgentName)
+        $m | ConvertTo-Json -Depth 10 | Set-Content -Path $ManifestPath
+    } catch {}
+}
+
+function Get-ManifestAgentsForPath {
+    param([string]$ManifestPath, [string]$AgentName, [string]$Path)
+    if (!(Test-Path $ManifestPath)) { return @() }
+    try {
+        $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+        return @($m.installations.PSObject.Properties |
+            Where-Object { $_.Name -ne $AgentName -and $_.Value.target_path -eq $Path } |
+            ForEach-Object { $_.Name })
+    } catch { return @() }
+}
+
+function Get-ManifestAgents {
+    param([string]$ManifestPath)
+    if (!(Test-Path $ManifestPath)) { return @() }
+    try {
+        $m = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+        return @($m.installations.PSObject.Properties.Name)
+    } catch { return @() }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Remote version check
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Fetch-RemoteVersion {
+    if ($LOCAL_DIR -and (Test-Path (Join-Path $LOCAL_DIR "VERSION"))) {
+        return (Get-Content (Join-Path $LOCAL_DIR "VERSION") -Raw).Trim()
+    }
+    try {
+        $ver = (Invoke-WebRequest -Uri "$REPO_BASE/VERSION" -UseBasicParsing -ErrorAction Stop).Content.Trim()
+        return $ver
+    } catch { return "" }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Download & assembly
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Download-Files {
+    param([string]$TmpDir)
+
+    if ($LOCAL_DIR) {
+        if (-not (Test-Path -PathType Container $LOCAL_DIR)) {
+            Write-Err "CONDUCTOR_SKILLS_LOCAL_DIR=$LOCAL_DIR is not a directory"
+            exit 1
+        }
+        Write-Info "Copying skill files from $LOCAL_DIR..."
+        foreach ($file in $SKILL_FILES) {
+            $src = Join-Path $LOCAL_DIR $file
+            $dest = Join-Path $TmpDir $file
+            if (-not (Test-Path $src)) {
+                Write-Err "Missing file in local source: $file"
+                Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
+                exit 1
+            }
+            $dir = Split-Path -Parent $dest
+            if ($dir -and !(Test-Path $dir)) {
+                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            }
+            Copy-Item $src $dest
+        }
+        Write-Ok "Copied $($SKILL_FILES.Count) files"
+        return
+    }
+
+    Write-Info "Downloading skill files..."
+    foreach ($file in $SKILL_FILES) {
+        $dir = Split-Path -Parent (Join-Path $TmpDir $file)
+        if ($dir -and !(Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        $url = "$REPO_BASE/$file"
+        $dest = Join-Path $TmpDir $file
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Err "Failed to download $file"
+            Write-Err "Check your internet connection and try again."
+            Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
+            exit 1
+        }
+    }
+    Write-Ok "Downloaded $($SKILL_FILES.Count) files"
+}
+
+function Assemble-Content {
+    param([string]$TmpDir, [string]$Output)
+
+    $content = @()
+    $content += Get-Content (Join-Path $TmpDir "skills/conductor/SKILL.md") -Raw
+    $content += "`n---`n"
+    $content += "# References`n"
+    foreach ($f in Get-ChildItem (Join-Path $TmpDir "skills/conductor/references") -Filter "*.md") {
+        $content += Get-Content $f.FullName -Raw
+        $content += "`n---`n"
+    }
+    $content += "# Examples`n"
+    foreach ($f in Get-ChildItem (Join-Path $TmpDir "skills/conductor/examples") -Filter "*.md") {
+        $content += Get-Content $f.FullName -Raw
+        $content += "`n---`n"
+    }
+    $content -join "`n" | Set-Content -Path $Output -NoNewline
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Safe file writing
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Safe-Write {
+    param([string]$Target, [string]$Source, [bool]$ForceWrite)
+
+    if ((Test-Path $Target) -and !$ForceWrite) {
+        Write-Warn "File already exists: $Target"
+        $answer = Read-Host "  Overwrite? [y/N]"
+        if ($answer -notmatch "^[Yy]") {
+            Write-Info "Skipped. Use -Force to overwrite."
+            return $false
+        }
+    }
+
+    $dir = Split-Path -Parent $Target
+    if ($dir -and !(Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    Copy-Item -Path $Source -Destination $Target -Force
+    Write-Ok "Installed: $Target"
+    return $true
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Global install paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Supports-Global {
+    param([string]$AgentName)
+    return $GLOBAL_AGENTS -contains $AgentName
+}
+
+function Get-GlobalPath {
+    param([string]$AgentName)
+    $installDir = $env:USERPROFILE
+    switch ($AgentName) {
+        "claude"   { return Join-Path $installDir ".claude\settings.json" }
+        {$_ -in @("codex","gemini","cursor","opencode","copilot","amp")} { return Join-Path $installDir ".agents\skills\conductor" }
+        "cline"    { return Join-Path $installDir ".cline\skills\conductor" }
+        "windsurf" { return Join-Path $installDir ".codeium\windsurf\memories\global_rules.md" }
+        "roo"      { return Join-Path $installDir ".roo\rules\conductor.md" }
+        "aider"    { return Join-Path $installDir ".aider.conf.yml" }
+    }
+}
+
+function Get-TargetPath {
+    param([string]$AgentName, [string]$ProjDir)
+    switch ($AgentName) {
+        "claude"   { return Join-Path $ProjDir ".claude\settings.json" }
+        {$_ -in @("codex","gemini","cursor","opencode","copilot","amp")} { return Join-Path $ProjDir ".agents\skills\conductor" }
+        "windsurf" { return Join-Path $ProjDir ".windsurf\skills\conductor" }
+        "cline"    { return Join-Path $ProjDir ".cline\skills\conductor" }
+        "aider"    { return Join-Path $ProjDir ".conductor-skills" }
+        "amazonq"  { return Join-Path $ProjDir ".amazonq\rules\conductor.md" }
+        "roo"      { return Join-Path $ProjDir ".roo\rules\conductor.md" }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-agent install logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Bust caches so existing Claude installs actually pick up new content.
+# Without this, a user with an old plugin cache will see a silent no-op:
+# settings.json keys are already present, the old version cache keeps
+# loading, and nothing changes. Always called on install and uninstall.
+function Clear-ClaudeLegacyAndCaches {
+    # We do NOT delete ~/.claude/skills/conductor — that's the user-skill
+    # install location, populated by Install-SkillDir. Re-installs
+    # *overwrite* it instead.
+    $cache    = Join-Path $env:USERPROFILE ".claude\plugins\cache\conductor-skills"
+    $market   = Join-Path $env:USERPROFILE ".claude\plugins\marketplaces\conductor-skills"
+    $registry = Join-Path $env:USERPROFILE ".claude\plugins\installed_plugins.json"
+
+    if (Test-Path $cache) {
+        Remove-Item -Recurse -Force $cache
+        Write-Ok "Cleared plugin cache: $cache (will re-fetch on next session)"
+    }
+    if (Test-Path $market) {
+        Remove-Item -Recurse -Force $market
+        Write-Ok "Cleared marketplace clone: $market (will re-clone on next session)"
+    }
+
+    # Surgically remove our entry from Claude's plugin registry — a stale
+    # "installed at v1.0.0" record pointing to a deleted cache dir would
+    # make Claude Code skip re-fetching on next session start.
+    if (Test-Path $registry) {
+        try {
+            $raw = Get-Content $registry -Raw
+            $r = $raw | ConvertFrom-Json
+            if ($r.plugins.PSObject.Properties.Name -contains 'conductor@conductor-skills') {
+                $r.plugins.PSObject.Properties.Remove('conductor@conductor-skills')
+                ($r | ConvertTo-Json -Depth 10) | Set-Content -Path $registry -Encoding UTF8
+                Write-Ok "Cleared stale registry entry in $registry"
+            }
+        } catch {
+            # Non-fatal: registry could be missing keys or in a format we don't recognize.
+        }
+    }
+}
+
+function Install-SkillDir {
+    param([string]$DestDir, [string]$TmpDir)
+
+    if ($LOCAL_DIR) {
+        $srcDir = Join-Path $LOCAL_DIR "skills\conductor"
+    } else {
+        $srcDir = Join-Path $TmpDir "skills\conductor"
+    }
+
+    if (-not (Test-Path $srcDir)) {
+        Write-Err "Skill source not found at $srcDir"
+        return $false
+    }
+
+    # Mirror — replace, don't merge
+    if (Test-Path $DestDir) {
+        Remove-Item -Recurse -Force $DestDir
+    }
+    New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
+    Copy-Item -Recurse -Force "$srcDir\*" $DestDir
+    Write-Ok "Installed skill files: $DestDir"
+    return $true
+}
+
+$script:MirroredDirs = @()
+
+function Install-SkillDirOnce {
+    param([string]$DestDir, [string]$TmpDir)
+
+    if ($script:MirroredDirs -contains $DestDir) {
+        Write-Ok "Shared skill dir already installed this run: $DestDir"
+        return $true
+    }
+    $result = Install-SkillDir -DestDir $DestDir -TmpDir $TmpDir
+    if ($result) { $script:MirroredDirs += $DestDir }
+    return $result
+}
+
+function Install-Claude {
+    param([bool]$IsGlobal, [string]$ProjDir, [string]$TmpDir)
+
+    # Claude Code reads `extraKnownMarketplaces` and `enabledPlugins` from
+    # settings.json on session start — writing both there is equivalent to
+    # running the in-session `/plugin marketplace add` + `/plugin install`
+    # commands. There is no `claude plugin install` subcommand.
+    if ($IsGlobal) {
+        $settingsPath = Join-Path $env:USERPROFILE ".claude\settings.json"
+    } else {
+        $settingsPath = Join-Path $ProjDir ".claude\settings.json"
+    }
+
+    $settingsDir = Split-Path -Parent $settingsPath
+    New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+
+    Clear-ClaudeLegacyAndCaches
+
+    Install-SkillDir -DestDir (Join-Path $env:USERPROFILE ".claude\skills\conductor") -TmpDir $TmpDir | Out-Null
+
+    Write-Info "Enabling Conductor plugin in $settingsPath ..."
+
+    if (Test-Path $settingsPath) {
+        try {
+            $raw = Get-Content $settingsPath -Raw
+            if ([string]::IsNullOrWhiteSpace($raw)) {
+                $settings = [PSCustomObject]@{}
+            } else {
+                $settings = $raw | ConvertFrom-Json
+            }
+        } catch {
+            Write-Err "Failed to parse $settingsPath as JSON: $_"
+            return $false
+        }
+    } else {
+        $settings = [PSCustomObject]@{}
+    }
+
+    $marketplaceEntry = [PSCustomObject]@{
+        source = [PSCustomObject]@{
+            source = 'github'
+            repo   = 'conductor-oss/conductor-skills'
+        }
+    }
+
+    if (-not ($settings.PSObject.Properties.Name -contains 'extraKnownMarketplaces')) {
+        $settings | Add-Member -NotePropertyName 'extraKnownMarketplaces' -NotePropertyValue ([PSCustomObject]@{})
+    }
+    if ($settings.extraKnownMarketplaces.PSObject.Properties.Name -contains 'conductor-skills') {
+        $settings.extraKnownMarketplaces.PSObject.Properties.Remove('conductor-skills')
+    }
+    $settings.extraKnownMarketplaces | Add-Member -NotePropertyName 'conductor-skills' -NotePropertyValue $marketplaceEntry
+
+    if (-not ($settings.PSObject.Properties.Name -contains 'enabledPlugins')) {
+        $settings | Add-Member -NotePropertyName 'enabledPlugins' -NotePropertyValue ([PSCustomObject]@{})
+    }
+    if ($settings.enabledPlugins.PSObject.Properties.Name -contains 'conductor@conductor-skills') {
+        $settings.enabledPlugins.PSObject.Properties.Remove('conductor@conductor-skills')
+    }
+    $settings.enabledPlugins | Add-Member -NotePropertyName 'conductor@conductor-skills' -NotePropertyValue $true
+
+    try {
+        ($settings | ConvertTo-Json -Depth 10) | Set-Content -Path $settingsPath -Encoding UTF8
+    } catch {
+        Write-Err "Failed to write $settingsPath : $_"
+        return $false
+    }
+
+    Write-Ok "Configured: $settingsPath"
+    Write-Host ""
+    Write-Host "Conductor installed two ways:" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  1. Skill at ~\.claude\skills\conductor\"
+    Write-Host "     Files are there NOW. Skill auto-loads on next session start."
+    Write-Host ""
+    Write-Host "  2. Plugin via settings.json (extraKnownMarketplaces + enabledPlugins)"
+    Write-Host "     Claude Code fetches plugin v$SCRIPT_VERSION on next session start."
+    Write-Host "     Provides slash commands: /conductor, /conductor-setup, /conductor-optimize, /conductor-scaffold-worker"
+    Write-Host ""
+    Write-Host "⚠ Restart Claude Code to activate." -ForegroundColor Yellow
+    Write-Host "    * claude CLI:           exit (Ctrl+D) and start a new session"
+    Write-Host "    * VS Code extension:    Ctrl+Shift+P -> ""Reload Window"""
+    Write-Host "    * Desktop app:          quit and reopen"
+    return $true
+}
+
+function Install-ToFile {
+    param([string]$Target, [string]$Assembled, [bool]$ForceWrite, [string]$Prefix = "")
+
+    if ($Prefix) {
+        $tmpFile = [System.IO.Path]::GetTempFileName()
+        ($Prefix + (Get-Content $Assembled -Raw)) | Set-Content -Path $tmpFile -NoNewline
+        $result = Safe-Write -Target $Target -Source $tmpFile -ForceWrite $ForceWrite
+        Remove-Item $tmpFile -ErrorAction SilentlyContinue
+        return $result
+    } else {
+        return Safe-Write -Target $Target -Source $Assembled -ForceWrite $ForceWrite
+    }
+}
+
+function Install-AiderToDir {
+    param([string]$SkillDir, [string]$TmpDir, [string]$Config, [string]$ReadPrefix)
+
+    New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
+
+    Write-Info "Copying skill files to $SkillDir ..."
+    # Copy the whole tree so nested dirs (examples/workflows, examples/agents) land too;
+    # the read: entries below reference every file in SKILL_FILES.
+    Copy-Item -Path (Join-Path $TmpDir "skills/conductor/*") -Destination $SkillDir -Recurse -Force
+    Write-Ok "Files copied to $SkillDir"
+
+    if ((Test-Path $Config) -and (Select-String -Path $Config -Pattern "conductor-skills" -Quiet)) {
+        Write-Info "Aider config already references conductor-skills, skipping."
+    } else {
+        Write-Info "Adding read entries to $Config ..."
+        $entries = @("", "# Conductor Skills", "read:")
+        foreach ($file in $SKILL_FILES) {
+            $relative = $file -replace "^skills/conductor/", ""
+            $entries += "  - ${ReadPrefix}${relative}"
+        }
+        $entries -join "`n" | Add-Content -Path $Config
+        Write-Ok "Updated: $Config"
+    }
+}
+
+function Install-ForAgent {
+    param([string]$AgentName, [string]$ProjDir, [bool]$IsGlobal, [bool]$ForceWrite, [string]$TmpDir, [string]$Assembled)
+
+    if ($AgentName -eq "claude") {
+        return Install-Claude -IsGlobal $IsGlobal -ProjDir $ProjDir -TmpDir $TmpDir
+    }
+
+    if ($AgentName -in @("codex","gemini","cursor","opencode","cline","copilot","amp")) {
+        $dest = if ($IsGlobal) { Get-GlobalPath -AgentName $AgentName } else { Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir }
+        return Install-SkillDirOnce -DestDir $dest -TmpDir $TmpDir
+    }
+    # windsurf has no global skills dir — global keeps the memories blob
+    if ($AgentName -eq "windsurf" -and -not $IsGlobal) {
+        return Install-SkillDirOnce -DestDir (Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir) -TmpDir $TmpDir
+    }
+
+    if ($IsGlobal) {
+        $installDir = $env:USERPROFILE
+        if ($AgentName -eq "aider") {
+            Install-AiderToDir -SkillDir (Join-Path $installDir ".conductor-skills") -TmpDir $TmpDir -Config (Join-Path $installDir ".aider.conf.yml") -ReadPrefix "$installDir/.conductor-skills/"
+            return $true
+        } else {
+            $targetPath = Get-GlobalPath -AgentName $AgentName
+            return Install-ToFile -Target $targetPath -Assembled $Assembled -ForceWrite $ForceWrite
+        }
+    } else {
+        switch ($AgentName) {
+            "aider"    {
+                Install-AiderToDir -SkillDir (Join-Path $ProjDir ".conductor-skills") -TmpDir $TmpDir -Config (Join-Path $ProjDir ".aider.conf.yml") -ReadPrefix ".conductor-skills/"
+                return $true
+            }
+            "amazonq"  { return Install-ToFile -Target (Join-Path $ProjDir ".amazonq\rules\conductor.md") -Assembled $Assembled -ForceWrite $ForceWrite }
+            "roo"      { return Install-ToFile -Target (Join-Path $ProjDir ".roo\rules\conductor.md") -Assembled $Assembled -ForceWrite $ForceWrite }
+        }
+    }
+    return $false
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Uninstall
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Uninstall-Agent {
+    param([string]$AgentName, [string]$ProjDir, [bool]$IsGlobal, [string]$ManifestPath)
+
+    $skillDir = ""
+    if ($AgentName -in @("codex","gemini","cursor","opencode","cline","copilot","amp")) {
+        $skillDir = if ($IsGlobal) { Get-GlobalPath -AgentName $AgentName } else { Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir }
+    } elseif ($AgentName -eq "windsurf" -and -not $IsGlobal) {
+        $skillDir = Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir
+    }
+    if ($skillDir) {
+        $others = @(Get-ManifestAgentsForPath -ManifestPath $ManifestPath -AgentName $AgentName -Path $skillDir)
+        if ($others.Count -gt 0) {
+            Write-Ok "Kept $skillDir — still used by: $($others -join ' ')"
+        } elseif (Test-Path $skillDir) {
+            Remove-Item -Recurse -Force $skillDir
+            Write-Ok "Removed: $skillDir"
+        } else {
+            Write-Warn "Nothing to uninstall: $skillDir not found"
+        }
+        return
+    }
+
+    if ($AgentName -eq "claude") {
+        if ($IsGlobal) {
+            $settingsPath = Join-Path $env:USERPROFILE ".claude\settings.json"
+        } else {
+            $settingsPath = Join-Path $ProjDir ".claude\settings.json"
+        }
+        if (-not (Test-Path $settingsPath)) {
+            Write-Warn "Nothing to uninstall: $settingsPath not found"
+            return
+        }
+        try {
+            $raw = Get-Content $settingsPath -Raw
+            $settings = $raw | ConvertFrom-Json
+        } catch {
+            Write-Err "Failed to parse $settingsPath : $_"
+            return
+        }
+        $changed = $false
+        if (($settings.PSObject.Properties.Name -contains 'extraKnownMarketplaces') -and
+            ($settings.extraKnownMarketplaces.PSObject.Properties.Name -contains 'conductor-skills')) {
+            $settings.extraKnownMarketplaces.PSObject.Properties.Remove('conductor-skills')
+            if (-not $settings.extraKnownMarketplaces.PSObject.Properties.Name) {
+                $settings.PSObject.Properties.Remove('extraKnownMarketplaces')
+            }
+            $changed = $true
+        }
+        if (($settings.PSObject.Properties.Name -contains 'enabledPlugins') -and
+            ($settings.enabledPlugins.PSObject.Properties.Name -contains 'conductor@conductor-skills')) {
+            $settings.enabledPlugins.PSObject.Properties.Remove('conductor@conductor-skills')
+            if (-not $settings.enabledPlugins.PSObject.Properties.Name) {
+                $settings.PSObject.Properties.Remove('enabledPlugins')
+            }
+            $changed = $true
+        }
+        if ($changed) {
+            ($settings | ConvertTo-Json -Depth 10) | Set-Content -Path $settingsPath -Encoding UTF8
+            Write-Ok "Removed Conductor entries from $settingsPath"
+        } else {
+            Write-Warn "No Conductor entries found in $settingsPath"
+        }
+        $skillDir = Join-Path $env:USERPROFILE ".claude\skills\conductor"
+        if (Test-Path $skillDir) {
+            Remove-Item -Recurse -Force $skillDir
+            Write-Ok "Removed skill dir: $skillDir"
+        }
+        Clear-ClaudeLegacyAndCaches
+        return
+    }
+
+    if ($IsGlobal) {
+        if ($AgentName -eq "aider") {
+            $skillDir = Join-Path $env:USERPROFILE ".conductor-skills"
+            if (Test-Path $skillDir) {
+                Remove-Item -Recurse -Force $skillDir
+                Write-Ok "Removed: $skillDir"
+                Write-Info "Note: You may also want to remove the 'read:' entries from ~/.aider.conf.yml"
+            } else {
+                Write-Warn "Nothing to uninstall: $skillDir not found"
+            }
+            return
+        }
+        $target = Get-GlobalPath -AgentName $AgentName
+    } else {
+        $target = Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir
+        if ($AgentName -eq "aider") {
+            if (Test-Path $target) {
+                Remove-Item -Recurse -Force $target
+                Write-Ok "Removed: $target"
+                Write-Info "Note: You may also want to remove the 'read:' entries from .aider.conf.yml"
+            } else {
+                Write-Warn "Nothing to uninstall: $target not found"
+            }
+            return
+        }
+    }
+
+    if (Test-Path $target) {
+        Remove-Item -Force $target
+        Write-Ok "Removed: $target"
+    } else {
+        Write-Warn "Nothing to uninstall: $target not found"
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Grouped install summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+$script:GroupPaths = @()
+$script:GroupAgents = @()
+
+function Record-Group {
+    param([string]$Path, [string]$AgentName)
+
+    for ($i = 0; $i -lt $script:GroupPaths.Count; $i++) {
+        if ($script:GroupPaths[$i] -eq $Path) {
+            $script:GroupAgents[$i] = "$($script:GroupAgents[$i]), $AgentName"
+            return
+        }
+    }
+    $script:GroupPaths += $Path
+    $script:GroupAgents += $AgentName
+}
+
+function Print-GroupSummary {
+    if ($script:GroupPaths.Count -eq 0) { return }
+    Write-Host "Install locations:" -ForegroundColor White
+    for ($i = 0; $i -lt $script:GroupPaths.Count; $i++) {
+        Write-Host "  $($script:GroupPaths[$i]) -> $($script:GroupAgents[$i])"
+    }
+}
+
+function Get-DisplayPathForAgent {
+    param([string]$AgentName, [string]$ProjDir, [bool]$IsGlobal)
+    if ($AgentName -eq "claude") { return Join-Path $env:USERPROFILE ".claude\skills\conductor" }
+    if ($IsGlobal) { return Get-GlobalPath -AgentName $AgentName }
+    return Get-TargetPath -AgentName $AgentName -ProjDir $ProjDir
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Check mode (dry run)
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Do-Check {
+    param([string]$ManifestPath, [string[]]$Agents, [bool]$GlobalFlag, [bool]$AllFlag, [string]$ProjDir)
+
+    $manifest = $ManifestPath
+
+    Write-Host ""
+    Write-Host "Detected agents:" -ForegroundColor White
+    if ($Agents.Count -eq 0) {
+        Write-Warn "No AI coding agents detected on this system."
+        return
+    }
+
+    foreach ($a in $Agents) {
+        $installedVer = Read-ManifestVersion -ManifestPath $manifest -AgentName $a
+        $globalSupport = if (Supports-Global -AgentName $a) { "yes" } else { "no" }
+
+        if ($installedVer) {
+            if ($installedVer -eq $SCRIPT_VERSION) {
+                Write-Host "  * $a  v$installedVer (up to date)" -ForegroundColor Green
+            } else {
+                Write-Host "  * $a  v$installedVer -> v$SCRIPT_VERSION (upgrade available)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  * $a  (not installed)  global: $globalSupport" -ForegroundColor Blue
+        }
+    }
+    Write-Host ""
+
+    foreach ($a in $Agents) {
+        $useGlobal = $GlobalFlag
+        if ($AllFlag) {
+            if (Supports-Global -AgentName $a) { $useGlobal = $true } else { continue }
+        }
+        if ($useGlobal -and !(Supports-Global -AgentName $a)) { continue }
+        Record-Group -Path (Get-DisplayPathForAgent -AgentName $a -ProjDir $ProjDir -IsGlobal $useGlobal) -AgentName $a
+    }
+    Print-GroupSummary
+    Write-Host ""
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+if ($Version) {
+    Write-Host "v$SCRIPT_VERSION"
+    exit 0
+}
+
+# Require -Agent or -All
+if (-not $Agent -and -not $All) {
+    Write-Err "Missing required -Agent parameter (or use -All)"
+    exit 1
+}
+
+# Resolve project dir
+$ProjectDir = (Resolve-Path $ProjectDir).Path
+
+Write-Host ""
+Write-Host "Conductor Skills Installer v$SCRIPT_VERSION" -ForegroundColor White
+Write-Host ""
+
+# Determine manifest path
+$useGlobalManifest = $Global -or $All
+$manifest = Get-ManifestPath -IsGlobal $useGlobalManifest -ProjDir $ProjectDir
+
+# Build agent list
+$agentList = @()
+if ($All) {
+    $agentList = @(Detect-Agents)
+
+    # -All -Uninstall should also remove agents whose CLI/config is gone but
+    # whose install manifest entry is still there (e.g. the tool was
+    # uninstalled outside this script) — otherwise those files are orphaned
+    # forever since Detect-Agents can no longer see them.
+    if ($Uninstall) {
+        foreach ($t in (Get-ManifestAgents -ManifestPath $manifest)) {
+            if ($agentList -notcontains $t) { $agentList += $t }
+        }
+    }
+
+    if ($agentList.Count -eq 0) {
+        Write-Warn "No AI coding agents detected on this system."
+        Write-Host ""
+        Write-Info "Supported agents: claude, codex, gemini, cursor, windsurf, cline,"
+        Write-Info "  aider, copilot, amazonq, opencode, roo, amp"
+        Write-Host ""
+        Write-Info "Install one of the above, then re-run this command."
+        exit 0
+    }
+    Write-Info "Detected agents: $($agentList -join ', ')"
+    Write-Host ""
+} else {
+    $Agent = $Agent.ToLower()
+    if ($VALID_AGENTS -notcontains $Agent) {
+        Write-Err "Unknown agent: $Agent"
+        exit 1
+    }
+    $agentList = @($Agent)
+}
+
+# Check mode
+if ($Check) {
+    Do-Check -ManifestPath $manifest -Agents $agentList -GlobalFlag ([bool]$Global) -AllFlag ([bool]$All) -ProjDir $ProjectDir
+    exit 0
+}
+
+# Handle uninstall
+if ($Uninstall) {
+    foreach ($a in $agentList) {
+        $useGlobal = [bool]$Global
+        if ($All -and (Supports-Global -AgentName $a)) { $useGlobal = $true }
+        if ($useGlobal -and -not (Supports-Global -AgentName $a)) {
+            Write-Err "Global uninstall is not supported for $a. Run from your project directory instead."
+            continue
+        }
+        Write-Info "Uninstalling $a ..."
+        Uninstall-Agent -AgentName $a -ProjDir $ProjectDir -IsGlobal $useGlobal -ManifestPath $manifest
+        Remove-ManifestEntry -ManifestPath $manifest -AgentName $a
+    }
+    Write-Host ""
+    Write-Ok "Done!"
+    exit 0
+}
+
+# Check for upgrade
+$targetVersion = $SCRIPT_VERSION
+if ($Upgrade) {
+    Write-Info "Checking for updates..."
+    $remoteVer = Fetch-RemoteVersion
+    if (-not $remoteVer) {
+        Write-Warn "Could not check for updates (offline?). Using bundled v$SCRIPT_VERSION."
+    } elseif ($remoteVer -ne $SCRIPT_VERSION) {
+        Write-Info "Update available: v$SCRIPT_VERSION -> v$remoteVer"
+        $targetVersion = $remoteVer
+    } else {
+        Write-Info "Already at latest version (v$SCRIPT_VERSION)."
+    }
+    Write-Host ""
+}
+
+# Download files to temp dir
+$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "conductor-skills-$(Get-Random)"
+New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+
+try {
+    Download-Files -TmpDir $tmpDir
+
+    $assembled = Join-Path $tmpDir "_assembled.md"
+    Assemble-Content -TmpDir $tmpDir -Output $assembled
+    $size = (Get-Item $assembled).Length
+    Write-Ok "Assembled skill content ($size bytes)"
+
+    $installedCount = 0
+    $freshInstallCount = 0
+    $skippedCount = 0
+    $legacyWarned = @()
+
+    foreach ($a in $agentList) {
+        Write-Host ""
+
+        # Determine if global for this agent
+        $useGlobal = [bool]$Global
+        if ($All) {
+            if (Supports-Global -AgentName $a) {
+                $useGlobal = $true
+            } else {
+                Write-Info "${a}: skipped (project-only install). Use -ProjectDir <path> to include."
+                $skippedCount++
+                continue
+            }
+        }
+
+        # Validate global support for single-agent mode
+        if ($useGlobal -and !(Supports-Global -AgentName $a)) {
+            Write-Err "Global install is not supported for $a. Run from your project directory instead."
+            continue
+        }
+
+        # Idempotency check. -Force re-installs; -Upgrade does not (matches -Check).
+        # Exception: claude always re-runs. Its "installed state" lives in two
+        # places — our manifest AND Claude Code's plugin cache. The cache can
+        # drift independently (user installed v1.0.0 via /plugin install, then
+        # we publish v1.6.0 — manifest matches but cache is stale). Always
+        # re-running keeps upgrades honest.
+        $installedVer = Read-ManifestVersion -ManifestPath $manifest -AgentName $a
+        $oldTargetPath = Read-ManifestTargetPath -ManifestPath $manifest -AgentName $a
+        if ($a -ne 'claude' -and $installedVer -and ($installedVer -eq $targetVersion) -and !$Force) {
+            Write-Ok "$a already at v$installedVer, skipping."
+            Record-Group -Path (Get-DisplayPathForAgent -AgentName $a -ProjDir $ProjectDir -IsGlobal $useGlobal) -AgentName $a
+            $skippedCount++
+            continue
+        }
+
+        if ($installedVer -and ($installedVer -ne $targetVersion)) {
+            Write-Info "Upgrading $a from v$installedVer to v$targetVersion ..."
+        } else {
+            Write-Info "Installing for $a ..."
+        }
+
+        # Write-time force semantics:
+        #   -Force / -Upgrade  → always
+        #   manifest shows older version → force (clear upgrade; file is OURS)
+        # Mirrors install.sh — the 1.5.0->1.6.x upgrade no-op happened because
+        # safe_write's Read-Host prompt got an empty answer on non-interactive
+        # stdin and silently skipped every file.
+        $installForce = [bool]$Force
+        if ($Upgrade) { $installForce = $true }
+        if ($installedVer -and ($installedVer -ne $targetVersion)) { $installForce = $true }
+
+        # Perform install
+        $result = Install-ForAgent -AgentName $a -ProjDir $ProjectDir -IsGlobal $useGlobal -ForceWrite $installForce -TmpDir $tmpDir -Assembled $assembled
+        if ($result -ne $false) {
+            $targetPath = if ($useGlobal) { Get-GlobalPath -AgentName $a } else { Get-TargetPath -AgentName $a -ProjDir $ProjectDir }
+            $mode = if ($useGlobal) { "global" } else { "project" }
+
+            # A prior version of this agent's install may have written
+            # somewhere else (e.g. the pre-1.6.6 single-file layout). We only
+            # know about it because our own manifest recorded where we last
+            # wrote — warn instead of deleting, since we can't tell whether
+            # the user has since edited that file by hand.
+            if ($oldTargetPath -and ($oldTargetPath -ne $targetPath) -and (Test-Path $oldTargetPath) -and ($legacyWarned -notcontains $oldTargetPath)) {
+                Write-Warn "Legacy install found at $oldTargetPath (superseded by $targetPath) - remove it manually if no longer needed."
+                $legacyWarned += $oldTargetPath
+            }
+
+            Write-ManifestEntry -ManifestPath $manifest -AgentName $a -Ver $targetVersion -Mode $mode -TargetPath $targetPath
+            Record-Group -Path (Get-DisplayPathForAgent -AgentName $a -ProjDir $ProjectDir -IsGlobal $useGlobal) -AgentName $a
+            $installedCount++
+            if (!$installedVer) { $freshInstallCount++ }
+        }
+    }
+
+    Write-Host ""
+    Print-GroupSummary
+    Write-Host ""
+    Write-Host "Done! Installed: $installedCount, Skipped: $skippedCount" -ForegroundColor Green
+    Write-Host ""
+
+    if ($freshInstallCount -gt 0) {
+        Write-Host "+==================================================================+" -ForegroundColor Cyan
+        Write-Host "|                  WELCOME TO CONDUCTOR SKILLS                     |" -ForegroundColor Cyan
+        Write-Host "|     Durable workflows. Powerful agents. Built to keep running.   |" -ForegroundColor Cyan
+        Write-Host "+==================================================================+" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  COMMUNITY & SUPPORT" -ForegroundColor White
+        Write-Host "  Join the Conductor community on Slack for help and discussion:"
+        Write-Host "  https://join.slack.com/t/orkes-conductor/shared_invite/zt-3dpcskdyd-W895bJDm8psAV7viYG3jFA" -ForegroundColor Blue
+        Write-Host ""
+        Write-Host "  DOCUMENTATION" -ForegroundColor White
+        Write-Host "  https://docs.conductor-oss.org/" -ForegroundColor Blue
+        Write-Host ""
+        Write-Host "  OPEN SOURCE" -ForegroundColor White
+        Write-Host "  Star the project, open a feature request, or send us a PR:"
+        Write-Host "  https://github.com/conductor-oss/conductor" -ForegroundColor Blue
+        Write-Host ""
+    }
+
+    Write-Host "GET STARTED" -ForegroundColor White
+    Write-Host '  Ask your agent:'
+    Write-Host ""
+    Write-Host '    "Set up both my Conductor profiles: developer and localhost.'
+    Write-Host '     Use Developer Edition by default."'
+    Write-Host ""
+    Write-Host "  [default] developer  https://developer.orkescloud.com/" -ForegroundColor White
+    Write-Host "  [switch]  localhost  http://localhost:8080/api" -ForegroundColor White
+    Write-Host ""
+} finally {
+    Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+}
